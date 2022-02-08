@@ -5,8 +5,6 @@
 #include <dlfcn.h>
 #include <stdbool.h>
 
-extern char **environ;
-
 #define DLLEXPORT __attribute__((__visibility__("default")))
 DLLEXPORT int execl(const char *pathname, const char *arg, ... /*, (char *) NULL */);
 DLLEXPORT int execlp(const char *file, const char *arg, ... /*, (char *) NULL */);
