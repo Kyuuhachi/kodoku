@@ -28,13 +28,33 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execv.c"
 #include "musl/src/process/execvp.c"
 
+
 static char *home_misc = NULL;
 static __typeof(&execve) o_execve;
 
+int set_home() {
+	char *homedir = getenv("KODOKU_HOME");
+	if(homedir == NULL) return 0;
+
+	char buf[1024];
+	ssize_t r = readlink("/proc/self/exe", buf, sizeof(buf));
+	if(r < 0) return r;
+	if(r >= sizeof(buf)) return ENAMETOOLONG;
+	buf[r] = 0;
+	char *last = strrchr(buf, '/');
+	if(last == NULL) return 0; // could possibly happen on fexecve(); in that case we just keep the old home
+
+	char home_str[strlen(homedir)+1+strlen(last+1)+1];
+	strcpy(home_str, homedir);
+	strcat(home_str, "/");
+	strcat(home_str, last+1);
+	return setenv("HOME", home_str, 1);
+}
+
 __attribute__((constructor)) void init() {
+	set_home();
 	char *_home_misc = getenv("KODOKU_HOME_MISC");
 	if(_home_misc != NULL) home_misc = strdup(_home_misc);
-
 	o_execve = dlsym(RTLD_NEXT, "execve");
 }
 
