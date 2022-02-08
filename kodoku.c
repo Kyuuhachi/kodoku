@@ -29,7 +29,6 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execvp.c"
 
 
-static char *home_misc = NULL;
 static __typeof(&execve) o_execve;
 
 int set_home() {
@@ -49,26 +48,19 @@ int set_home() {
 	char *last = strrchr(exe, '/');
 	if(last == NULL) return 0; // could possibly happen on fexecve(); in that case we just keep the old home
 
-	char home_str[strlen(homedir)+1+strlen(last+1)+1];
+	char home_str[strlen(homedir)+strlen(last)+1];
 	strcpy(home_str, homedir);
-	strcat(home_str, "/");
-	strcat(home_str, last+1);
+	strcat(home_str, last);
 	return setenv("HOME", home_str, 1);
 }
 
 __attribute__((constructor)) void init() {
 	set_home();
-	char *_home_misc = getenv("KODOKU_HOME_MISC");
-	if(_home_misc != NULL) home_misc = strdup(_home_misc);
 	o_execve = dlsym(RTLD_NEXT, "execve");
 }
 
-__attribute__((destructor)) void deinit() {
-	free(home_misc);
-}
-
 int execve(const char *file, char *const argv[], char *const envp[]) {
-	if(file == NULL || envp == NULL || home_misc == NULL)
+	if(file == NULL || envp == NULL)
 		return o_execve(file, argv, envp);
 
 	char path[PATH_MAX+1];
@@ -77,7 +69,7 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 
 	char exe_str[strlen("_KODOKU_TMP_EXE=")+strlen(path)+1];
 	strcpy(exe_str, "_KODOKU_TMP_EXE=");
-	strcat(exe_str, home_misc);
+	strcat(exe_str, file);
 
 	int envc;
 	for(envc = 0; envp[envc] != NULL; envc++) {}
