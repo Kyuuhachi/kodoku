@@ -32,7 +32,9 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 
 static __typeof(&execve) o_execve;
 
-void set_var(char *var, char *exe, char *invar) {
+void set_var(char *var, char *invar, char *exe) {
+	// exe should start with / or strange things might happen. This is
+	// guaranteed by strrchr.
 	char *dir = getenv(invar);
 	if(dir == NULL) return;
 
@@ -75,7 +77,7 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 
 	char exe_str[strlen(EXE_ENV"=")+strlen(path)+1];
 	strcpy(exe_str, EXE_ENV"=");
-	strcat(exe_str, file);
+	strcat(exe_str, path);
 
 	int envc;
 	for(envc = 0; envp[envc] != NULL; envc++) {}
