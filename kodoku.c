@@ -47,16 +47,11 @@ void set_var(char *var, char *invar, char *exe) {
 void set_vars() {
 	char *exe = getenv(EXE_ENV);
 	unsetenv(EXE_ENV);
-	if(exe == NULL) {
-		char buf[PATH_MAX+1];
-		ssize_t r = readlink("/proc/self/exe", buf, sizeof(buf));
-		if(r < 0) return;
-		if((size_t)r >= sizeof(buf)) return;
-		buf[r] = 0;
-		exe = buf;
-	}
+	if(exe == NULL) exe = "/proc/self/exe";
+	char buf[PATH_MAX+1];
+	if(realpath(exe, buf) == NULL) return;
 	char *last = strrchr(exe, '/');
-	if(last == NULL) return; // could possibly happen on fexecve(); in that case we just keep the old home
+	if(last == NULL) return;
 
 	set_var("HOME", "KODOKU_HOME", last);
 	set_var("TMPDIR", "KODOKU_TMPDIR", last);
@@ -71,13 +66,9 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 	if(envp == NULL)
 		return o_execve(file, argv, envp);
 
-	char path[PATH_MAX+1];
-	if(realpath(file, path) == NULL) // Realpath() can call getcwd(), which is not signal-safe?
-		return o_execve(file, argv, envp);
-
-	char exe_str[strlen(EXE_ENV"=")+strlen(path)+1];
+	char exe_str[strlen(EXE_ENV"=")+strlen(file)+1];
 	strcpy(exe_str, EXE_ENV"=");
-	strcat(exe_str, path);
+	strcat(exe_str, file);
 
 	int envc;
 	for(envc = 0; envp[envc] != NULL; envc++) {}
