@@ -66,7 +66,7 @@ __attribute__((constructor)) void init() {
 }
 
 int execve(const char *file, char *const argv[], char *const envp[]) {
-	if(file == NULL || envp == NULL)
+	if(envp == NULL)
 		return o_execve(file, argv, envp);
 
 	char path[PATH_MAX+1];
