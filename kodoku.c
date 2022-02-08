@@ -36,12 +36,16 @@ int set_home() {
 	char *homedir = getenv("KODOKU_HOME");
 	if(homedir == NULL) return 0;
 
-	char buf[1024];
-	ssize_t r = readlink("/proc/self/exe", buf, sizeof(buf));
-	if(r < 0) return r;
-	if(r >= sizeof(buf)) return ENAMETOOLONG;
-	buf[r] = 0;
-	char *last = strrchr(buf, '/');
+	char *exe = getenv("_KODOKU_TMP_EXE");
+	if(exe == NULL) {
+		char buf[PATH_MAX+1];
+		ssize_t r = readlink("/proc/self/exe", buf, sizeof(buf));
+		if(r < 0) return r;
+		if((size_t)r >= sizeof(buf)) return ENAMETOOLONG;
+		buf[r] = 0;
+		exe = buf;
+	}
+	char *last = strrchr(exe, '/');
 	if(last == NULL) return 0; // could possibly happen on fexecve(); in that case we just keep the old home
 
 	char home_str[strlen(homedir)+1+strlen(last+1)+1];
@@ -63,19 +67,23 @@ __attribute__((destructor)) void deinit() {
 }
 
 int execve(const char *file, char *const argv[], char *const envp[]) {
-	if(envp == NULL || home_misc == NULL)
+	if(file == NULL || envp == NULL || home_misc == NULL)
 		return o_execve(file, argv, envp);
 
-	char home_str[5+strlen(home_misc)+1];
-	strcpy(home_str, "HOME=");
-	strcat(home_str, home_misc);
+	char path[PATH_MAX+1];
+	if(realpath(file, path) == NULL) // Realpath() can call getcwd(), which is not signal-safe?
+		return o_execve(file, argv, envp);
+
+	char exe_str[strlen("_KODOKU_TMP_EXE=")+strlen(path)+1];
+	strcpy(exe_str, "_KODOKU_TMP_EXE=");
+	strcat(exe_str, home_misc);
 
 	int envc;
 	for(envc = 0; envp[envc] != NULL; envc++) {}
-	char *new_envp[envc+1];
-	for(int i = 0; i < envc; i++)
-		new_envp[i] = !strncmp(envp[i], "HOME=", 5) ? home_str : envp[i];
-	new_envp[envc] = NULL;
+	char *new_envp[envc+2];
+	for(int i = 0; i < envc; i++) new_envp[i] = envp[i];
+	new_envp[envc+0] = exe_str;
+	new_envp[envc+1] = NULL;
 
 	return o_execve(file, argv, new_envp);
 }
