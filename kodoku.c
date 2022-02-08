@@ -1,11 +1,10 @@
-// gcc -shared -fPIC -Wall -Wextra kodoku.cpp -o kodoku.so
-#include <cstdio>
+// gcc -shared -fPIC -Wall -Wextra kodoku.c -o kodoku.so
+#define _GNU_SOURCE
+#include <stdio.h>
 #include <unistd.h>
 #include <dlfcn.h>
 
 extern char **environ;
-
-extern "C" {
 
 #define DLLEXPORT __attribute__((__visibility__("default")))
 DLLEXPORT int execl(const char *pathname, const char *arg, ... /*, (char *) NULL */);
@@ -30,7 +29,6 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execlp.c"
 #include "musl/src/process/execv.c"
 #include "musl/src/process/execvp.c"
-}
 
 int execve(const char *file, char *const argv[], char *const envp[]) {
 	for(int i = 0; envp[i] != NULL; i++) {
@@ -39,6 +37,5 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 			fflush(stderr);
 		}
 	}
-	auto execve_o = (__typeof(&execve))dlsym(RTLD_NEXT, "execve");
-	return execve_o(file, argv, envp);
+	return ((__typeof(&execve))dlsym(RTLD_NEXT, "execve"))(file, argv, envp);
 }
