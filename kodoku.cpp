@@ -33,8 +33,12 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 }
 
 int execve(const char *file, char *const argv[], char *const envp[]) {
-	fprintf(stderr, "%s\n", file);
-	fflush(stderr);
+	for(int i = 0; envp[i] != NULL; i++) {
+		if(strncmp(envp[i], "HOME=", 5) == 0) {
+			fprintf(stderr, "%s\n", envp[i]);
+			fflush(stderr);
+		}
+	}
 	auto execve_o = (__typeof(&execve))dlsym(RTLD_NEXT, "execve");
 	return execve_o(file, argv, envp);
 }
