@@ -29,29 +29,38 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execv.c"
 #include "musl/src/process/execvp.c"
 
+
 static __typeof(&execve) o_execve;
 
-struct ko_vars {
-	char *env_exe;
-	char *env_static;
-	struct ko_vars *next;
+struct ko_llist {
+	char *val;
+	struct ko_llist *next;
 };
 
-static struct ko_vars *ko_vars = NULL;
+static struct ko_llist *ko_env_exe = NULL;
+static struct ko_llist *ko_env_static = NULL;
 
-size_t ko_envp_size(char *const *envp) {
-	int envc;
-	for(envc = 0; envp[envc] != NULL; envc++) {}
-	for(struct ko_vars *var = ko_vars; var; var = var->next)
-		envc++;
-	return envc;
+struct ko_llist *ko_llist_cons(struct ko_llist *list, char *val) {
+	struct ko_llist *head = malloc(sizeof (struct ko_llist));
+	head->val = val;
+	head->next = list;
+	return head;
 }
 
-void ko_envp_copy(char **dst, char *const *src) {
-	int i;
-	for(i = 0; src[i]; i++)
-		dst[i] = src[i];
-	dst[i] = NULL;
+void ko_llist_free(struct ko_llist *list) {
+	while(list) {
+		struct ko_llist *next = list->next;
+		free(list->val);
+		free(list);
+		list = next;
+	}
+}
+
+size_t ko_envp_size(char *const *envp, struct ko_llist *list) {
+	int envc;
+	for(envc = 0; envp[envc] != NULL; envc++) {}
+	for(; list; envc++, list = list->next) {}
+	return envc;
 }
 
 void ko_envp_insert(char **envp, char *line) {
@@ -63,6 +72,15 @@ void ko_envp_insert(char **envp, char *line) {
 		}
 	envp[i] = line;
 	envp[i+1] = NULL;
+}
+
+void ko_envp_fill(char **dst, char *const *src, struct ko_llist *list) {
+	int i;
+	for(i = 0; src[i]; i++)
+		dst[i] = src[i];
+	dst[i] = NULL;
+	for(; list; list = list->next)
+		ko_envp_insert(dst, list->val);
 }
 
 char *ko_build_var(char *name, char *dir, char *suf) {
@@ -82,14 +100,11 @@ void ko_add_var(char *name) {
 	char *dir = getenv(varname);
 	if(dir == NULL) return;
 
-	struct ko_vars *prev = ko_vars;
-	ko_vars = malloc(sizeof (struct ko_vars));
-	ko_vars->next = prev;
-
 	{
 		char *suf = getenv("KODOKU_STATIC");
 		if(suf == NULL) suf = "static";
-		ko_vars->env_static = ko_build_var(name, dir, suf);
+		char *str = ko_build_var(name, dir, suf);
+		ko_env_static = ko_llist_cons(ko_env_static, str);
 	}
 
 	{
@@ -100,7 +115,8 @@ void ko_add_var(char *name) {
 		}
 		char *last = strrchr(buf, '/');
 		if(last == NULL) goto end;
-		ko_vars->env_exe = ko_build_var(name, dir, last+1);
+		char *str = ko_build_var(name, dir, last+1);
+		ko_env_exe = ko_llist_cons(ko_env_exe, str);
 	} end:;
 }
 
@@ -109,22 +125,14 @@ __attribute__((constructor)) void ko_init() {
 	ko_add_var("HOME");
 	ko_add_var("TMPDIR");
 
-	char **new_environ = calloc(sizeof(char*), ko_envp_size(environ)+1);
-	ko_envp_copy(new_environ, environ);
-	for(struct ko_vars *var = ko_vars; var; var = var->next)
-		if(var->env_exe)
-			ko_envp_insert(new_environ, var->env_exe);
+	char **new_environ = calloc(sizeof(char*), ko_envp_size(environ, ko_env_exe) + 1);
+	ko_envp_fill(new_environ, environ, ko_env_exe);
 	environ = new_environ;
 }
 
 __attribute__((destructor)) void ko_deinit() {
-	while(ko_vars) {
-		struct ko_vars *next = ko_vars->next;
-		free(ko_vars->env_exe);
-		free(ko_vars->env_static);
-		free(ko_vars);
-		ko_vars = next;
-	}
+	ko_llist_free(ko_env_exe);
+	ko_llist_free(ko_env_static);
 	free(environ);
 }
 
@@ -132,11 +140,7 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 	if(envp == NULL)
 		return o_execve(file, argv, envp);
 
-	char *new_envp[ko_envp_size(envp)+1];
-	ko_envp_copy(new_envp, envp);
-	for(struct ko_vars *var = ko_vars; var; var = var->next)
-		if(var->env_static)
-			ko_envp_insert(new_envp, var->env_static);
-
+	char *new_envp[ko_envp_size(envp, ko_env_static)+1];
+	ko_envp_fill(new_envp, envp, ko_env_static);
 	return o_execve(file, argv, new_envp);
 }
