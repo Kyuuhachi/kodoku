@@ -1,3 +1,4 @@
+// gcc -shared -fPIC -Wall -Wextra kodoku.cpp -o kodoku.so
 #include <cstdio>
 #include <unistd.h>
 #include <dlfcn.h>
