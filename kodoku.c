@@ -29,14 +29,20 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execvp.c"
 
 #define EXE_ENV "_KODOKU_EXE"
-#define HOME_ENV "KODOKU_HOME"
 
 static __typeof(&execve) o_execve;
 
-int set_home() {
-	char *homedir = getenv(HOME_ENV);
-	if(homedir == NULL) return 0;
+int set_var(char *var, char *exe, char *invar) {
+	char *dir = getenv(invar);
+	if(dir == NULL) return 0;
 
+	char val[strlen(dir)+strlen(exe)+1];
+	strcpy(val, dir);
+	strcat(val, exe);
+	return setenv(var, val, 1);
+}
+
+int set_vars() {
 	char *exe = getenv(EXE_ENV);
 	unsetenv(EXE_ENV);
 	if(exe == NULL) {
@@ -50,14 +56,13 @@ int set_home() {
 	char *last = strrchr(exe, '/');
 	if(last == NULL) return 0; // could possibly happen on fexecve(); in that case we just keep the old home
 
-	char home_str[strlen(homedir)+strlen(last)+1];
-	strcpy(home_str, homedir);
-	strcat(home_str, last);
-	return setenv("HOME", home_str, 1);
+	set_var("HOME", "KODOKU_HOME", last);
+	set_var("TMPDIR", "KODOKU_TMPDIR", last);
+	return 0;
 }
 
 __attribute__((constructor)) void init() {
-	set_home();
+	set_vars();
 	o_execve = dlsym(RTLD_NEXT, "execve");
 }
 
