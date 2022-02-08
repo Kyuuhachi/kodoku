@@ -1,4 +1,4 @@
-// gcc -shared -fPIC -Wall -Wextra -ldl -Wl,--no-undefined kodoku.c -o kodoku.so
+// gcc -shared -fPIC -Wall -Wextra -ldl -Wl,--no-undefined -fvisibility=hidden kodoku.c -o kodoku.so
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <unistd.h>
