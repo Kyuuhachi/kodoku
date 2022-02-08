@@ -29,59 +29,101 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execv.c"
 #include "musl/src/process/execvp.c"
 
-static char *home_misc = NULL;
 static __typeof(&execve) o_execve;
 
-void set_var(char *var, char *invar, char *exe) {
-	// exe should start with / or strange things might happen. This is
-	// guaranteed by strrchr.
-	char *dir = getenv(invar);
-	if(dir == NULL) return;
+struct ko_statics {
+	char *key;
+	char *env_static;
+	struct ko_statics *next;
+};
+
+static struct ko_statics *ko_vars = NULL;
+
+void ko_add_env(char *name, char *dir) {
+	char *exe = (char*)getauxval(AT_EXECFN);
+	char buf[PATH_MAX+1];
+	if(exe == NULL || realpath(exe, buf) == NULL) {
+		if(realpath("/proc/self/exe", buf) == NULL) return;
+	}
+	char *last = strrchr(buf, '/');
+	if(last == NULL) return;
 
 	char val[strlen(dir)+strlen(exe)+1];
 	strcpy(val, dir);
-	strcat(val, exe);
-	setenv(var, val, 1);
+	strcat(val, last); // it begins with a slash courtesy of strrchr
+	setenv(name, val, 1);
 }
 
-void set_vars() {
-	char *exe = (char*)getauxval(AT_EXECFN);
-	if(exe == NULL) exe = "/proc/self/exe";
-	char buf[PATH_MAX+1];
-	if(realpath(exe, buf) == NULL) return;
-	char *last = strrchr(exe, '/');
-	if(last == NULL) return;
+void ko_add_static(char *name, char *dir) {
+	char *suf = getenv("KODOKU_STATIC");
+	if(suf == NULL) suf = "static";
 
-	set_var("HOME", "KODOKU_HOME", last);
-	set_var("TMPDIR", "KODOKU_TMPDIR", last);
+	char *env_static = malloc(strlen(name) + 1 + strlen(dir) + 1 + strlen(suf) + 1);
+	strcpy(env_static, name);
+	strcat(env_static, "=");
+	strcat(env_static, dir);
+	strcat(env_static, "/");
+	strcat(env_static, suf);
+
+	struct ko_statics *prev = ko_vars;
+	ko_vars = malloc(sizeof (struct ko_statics));
+	ko_vars->key = name;
+	ko_vars->env_static = env_static;
+	ko_vars->next = prev;
 }
 
-__attribute__((constructor)) void init() {
-	set_vars();
+void ko_addvar(char *name) {
+	char varname[strlen("KODOKU_")+strlen(name)+1];
+	strcpy(varname, "KODOKU_");
+	strcat(varname, name);
+	char *dir = getenv(varname);
+	if(dir == NULL) return;
 
-	char *_home_misc = getenv("KODOKU_HOME_MISC");
-	if(_home_misc != NULL) home_misc = strdup(_home_misc);
+	ko_add_env(name, dir);
+	ko_add_static(name, dir);
+}
+
+__attribute__((constructor)) void ko_init() {
 	o_execve = dlsym(RTLD_NEXT, "execve");
+	ko_addvar("HOME");
+	ko_addvar("TMPDIR");
 }
 
-__attribute__((destructor)) void deinit() {
-	free(home_misc);
+__attribute__((destructor)) void ko_deinit() {
+	while(ko_vars) {
+		struct ko_statics *next = ko_vars->next;
+		free(ko_vars->env_static);
+		free(ko_vars);
+		ko_vars = next;
+	}
 }
 
 int execve(const char *file, char *const argv[], char *const envp[]) {
-	if(envp == NULL || home_misc == NULL)
+	if(envp == NULL)
 		return o_execve(file, argv, envp);
-
-	char home_str[5+strlen(home_misc)+1];
-	strcpy(home_str, "HOME=");
-	strcat(home_str, home_misc);
 
 	int envc;
 	for(envc = 0; envp[envc] != NULL; envc++) {}
-	char *new_envp[envc+1];
+	int newenvc = envc;
+	for(struct ko_statics *var = ko_vars; var; var = var->next)
+		newenvc++;
+
+	char *new_envp[newenvc+1];
 	for(int i = 0; i < envc; i++)
-		new_envp[i] = !strncmp(envp[i], "HOME=", 5) ? home_str : envp[i];
+		new_envp[i] = envp[i];
 	new_envp[envc] = NULL;
+
+	for(struct ko_statics *var = ko_vars; var; var = var->next) {
+		int i;
+		for(i = 0; envp[i] != NULL; i++)
+			if(!strncmp(new_envp[i], var->env_static, strlen(var->key)+1)) {
+				new_envp[i] = var->env_static;
+				goto l;
+			}
+		new_envp[i] = var->env_static;
+		new_envp[i+1] = NULL;
+		l:;
+	}
 
 	return o_execve(file, argv, new_envp);
 }
