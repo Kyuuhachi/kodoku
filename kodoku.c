@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <stdbool.h>
 
 extern char **environ;
 
@@ -31,11 +32,20 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execvp.c"
 
 int execve(const char *file, char *const argv[], char *const envp[]) {
-	for(int i = 0; envp[i] != NULL; i++) {
-		if(strncmp(envp[i], "HOME=", 5) == 0) {
-			fprintf(stderr, "%s\n", envp[i]);
-			fflush(stderr);
-		}
-	}
-	return ((__typeof(&execve))dlsym(RTLD_NEXT, "execve"))(file, argv, envp);
+	char *home_path = getenv("KODOKU_HOME_MISC");
+	if(home_path == NULL)
+		return ((__typeof(&execve))dlsym(RTLD_NEXT, "execve"))(file, argv, envp);
+
+	char home_str[5+strlen(home_path)+1];
+	strcpy(home_str, "HOME=");
+	strcpy(home_str+5, home_path);
+
+	int envc;
+	for(envc = 0; envp[envc] != NULL; envc++) {}
+	char *new_envp[envc+1];
+	for(int i = 0; i < envc; i++)
+		new_envp[i] = !strncmp(envp[i], "HOME=", 5) ? home_str : envp[i];
+	new_envp[envc] = NULL;
+
+	return ((__typeof(&execve))dlsym(RTLD_NEXT, "execve"))(file, argv, new_envp);
 }
