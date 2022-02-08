@@ -28,15 +28,17 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execv.c"
 #include "musl/src/process/execvp.c"
 
+#define EXE_ENV "_KODOKU_EXE"
+#define HOME_ENV "KODOKU_HOME"
 
 static __typeof(&execve) o_execve;
 
 int set_home() {
-	char *homedir = getenv("KODOKU_HOME");
+	char *homedir = getenv(HOME_ENV);
 	if(homedir == NULL) return 0;
 
-	char *exe = getenv("_KODOKU_TMP_EXE");
-	unsetenv("_KODOKU_TMP_EXE");
+	char *exe = getenv(EXE_ENV);
+	unsetenv(EXE_ENV);
 	if(exe == NULL) {
 		char buf[PATH_MAX+1];
 		ssize_t r = readlink("/proc/self/exe", buf, sizeof(buf));
@@ -67,8 +69,8 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 	if(realpath(file, path) == NULL) // Realpath() can call getcwd(), which is not signal-safe?
 		return o_execve(file, argv, envp);
 
-	char exe_str[strlen("_KODOKU_TMP_EXE=")+strlen(path)+1];
-	strcpy(exe_str, "_KODOKU_TMP_EXE=");
+	char exe_str[strlen(EXE_ENV"=")+strlen(path)+1];
+	strcpy(exe_str, EXE_ENV"=");
 	strcat(exe_str, file);
 
 	int envc;
