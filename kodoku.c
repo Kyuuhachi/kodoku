@@ -37,6 +37,7 @@ int set_home() {
 	if(homedir == NULL) return 0;
 
 	char *exe = getenv("_KODOKU_TMP_EXE");
+	unsetenv("_KODOKU_TMP_EXE");
 	if(exe == NULL) {
 		char buf[PATH_MAX+1];
 		ssize_t r = readlink("/proc/self/exe", buf, sizeof(buf));
