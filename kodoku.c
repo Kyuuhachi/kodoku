@@ -29,14 +29,24 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execv.c"
 #include "musl/src/process/execvp.c"
 
+static char *home_misc = NULL;
+
+__attribute__((constructor)) void init() {
+	char *_home_misc = getenv("KODOKU_HOME_MISC");
+	if(_home_misc != NULL) home_misc = strdup(_home_misc);
+}
+
+__attribute__((destructor)) void deinit() {
+	free(home_misc);
+}
+
 int execve(const char *file, char *const argv[], char *const envp[]) {
-	char *home_path = getenv("KODOKU_HOME_MISC");
-	if(home_path == NULL)
+	if(envp == NULL || home_misc == NULL)
 		return ((__typeof(&execve))dlsym(RTLD_NEXT, "execve"))(file, argv, envp);
 
-	char home_str[5+strlen(home_path)+1];
+	char home_str[5+strlen(home_misc)+1];
 	strcpy(home_str, "HOME=");
-	strcpy(home_str+5, home_path);
+	strcpy(home_str+5, home_misc);
 
 	int envc;
 	for(envc = 0; envp[envc] != NULL; envc++) {}
