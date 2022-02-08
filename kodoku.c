@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <dlfcn.h>
+#include <sys/auxv.h>
 
 #define DLLEXPORT __attribute__((__visibility__("default")))
 DLLEXPORT int execl(const char *pathname, const char *arg, ... /*, (char *) NULL */);
@@ -28,8 +29,7 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execv.c"
 #include "musl/src/process/execvp.c"
 
-#define EXE_ENV "_KODOKU_EXE"
-
+static char *home_misc = NULL;
 static __typeof(&execve) o_execve;
 
 void set_var(char *var, char *invar, char *exe) {
@@ -45,8 +45,7 @@ void set_var(char *var, char *invar, char *exe) {
 }
 
 void set_vars() {
-	char *exe = getenv(EXE_ENV);
-	unsetenv(EXE_ENV);
+	char *exe = (char*)getauxval(AT_EXECFN);
 	if(exe == NULL) exe = "/proc/self/exe";
 	char buf[PATH_MAX+1];
 	if(realpath(exe, buf) == NULL) return;
@@ -59,23 +58,30 @@ void set_vars() {
 
 __attribute__((constructor)) void init() {
 	set_vars();
+
+	char *_home_misc = getenv("KODOKU_HOME_MISC");
+	if(_home_misc != NULL) home_misc = strdup(_home_misc);
 	o_execve = dlsym(RTLD_NEXT, "execve");
 }
 
+__attribute__((destructor)) void deinit() {
+	free(home_misc);
+}
+
 int execve(const char *file, char *const argv[], char *const envp[]) {
-	if(envp == NULL)
+	if(envp == NULL || home_misc == NULL)
 		return o_execve(file, argv, envp);
 
-	char exe_str[strlen(EXE_ENV"=")+strlen(file)+1];
-	strcpy(exe_str, EXE_ENV"=");
-	strcat(exe_str, file);
+	char home_str[5+strlen(home_misc)+1];
+	strcpy(home_str, "HOME=");
+	strcat(home_str, home_misc);
 
 	int envc;
 	for(envc = 0; envp[envc] != NULL; envc++) {}
-	char *new_envp[envc+2];
-	for(int i = 0; i < envc; i++) new_envp[i] = envp[i];
-	new_envp[envc+0] = exe_str;
-	new_envp[envc+1] = NULL;
+	char *new_envp[envc+1];
+	for(int i = 0; i < envc; i++)
+		new_envp[i] = !strncmp(envp[i], "HOME=", 5) ? home_str : envp[i];
+	new_envp[envc] = NULL;
 
 	return o_execve(file, argv, new_envp);
 }
