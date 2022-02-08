@@ -31,100 +31,112 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 
 static __typeof(&execve) o_execve;
 
-struct ko_statics {
-	char *key;
+struct ko_vars {
+	char *env_exe;
 	char *env_static;
-	struct ko_statics *next;
+	struct ko_vars *next;
 };
 
-static struct ko_statics *ko_vars = NULL;
+static struct ko_vars *ko_vars = NULL;
 
-void ko_add_env(char *name, char *dir) {
-	char *exe = (char*)getauxval(AT_EXECFN);
-	char buf[PATH_MAX+1];
-	if(exe == NULL || realpath(exe, buf) == NULL) {
-		if(realpath("/proc/self/exe", buf) == NULL) return;
-	}
-	char *last = strrchr(buf, '/');
-	if(last == NULL) return;
-
-	char val[strlen(dir)+strlen(exe)+1];
-	strcpy(val, dir);
-	strcat(val, last); // it begins with a slash courtesy of strrchr
-	setenv(name, val, 1);
+size_t ko_envp_size(char *const *envp) {
+	int envc;
+	for(envc = 0; envp[envc] != NULL; envc++) {}
+	for(struct ko_vars *var = ko_vars; var; var = var->next)
+		envc++;
+	return envc;
 }
 
-void ko_add_static(char *name, char *dir) {
-	char *suf = getenv("KODOKU_STATIC");
-	if(suf == NULL) suf = "static";
-
-	char *env_static = malloc(strlen(name) + 1 + strlen(dir) + 1 + strlen(suf) + 1);
-	strcpy(env_static, name);
-	strcat(env_static, "=");
-	strcat(env_static, dir);
-	strcat(env_static, "/");
-	strcat(env_static, suf);
-
-	struct ko_statics *prev = ko_vars;
-	ko_vars = malloc(sizeof (struct ko_statics));
-	ko_vars->key = name;
-	ko_vars->env_static = env_static;
-	ko_vars->next = prev;
+void ko_envp_copy(char **dst, char *const *src) {
+	int i;
+	for(i = 0; src[i]; i++)
+		dst[i] = src[i];
+	dst[i] = NULL;
 }
 
-void ko_addvar(char *name) {
+void ko_envp_insert(char **envp, char *line) {
+	int i;
+	for(i = 0; envp[i] != NULL; i++)
+		if(!strncmp(envp[i], line, strchrnul(line, '=')-line)) {
+			envp[i] = line;
+			return;
+		}
+	envp[i] = line;
+	envp[i+1] = NULL;
+}
+
+char *ko_build_var(char *name, char *dir, char *suf) {
+	char *str = malloc(strlen(name) + 1 + strlen(dir) + 1 + strlen(suf) + 1);
+	strcpy(str, name);
+	strcat(str, "=");
+	strcat(str, dir);
+	strcat(str, "/");
+	strcat(str, suf);
+	return str;
+}
+
+void ko_add_var(char *name) {
 	char varname[strlen("KODOKU_")+strlen(name)+1];
 	strcpy(varname, "KODOKU_");
 	strcat(varname, name);
 	char *dir = getenv(varname);
 	if(dir == NULL) return;
 
-	ko_add_env(name, dir);
-	ko_add_static(name, dir);
+	struct ko_vars *prev = ko_vars;
+	ko_vars = malloc(sizeof (struct ko_vars));
+	ko_vars->next = prev;
+
+	{
+		char *suf = getenv("KODOKU_STATIC");
+		if(suf == NULL) suf = "static";
+		ko_vars->env_static = ko_build_var(name, dir, suf);
+	}
+
+	{
+		char *exe = (char*)getauxval(AT_EXECFN);
+		char buf[PATH_MAX+1];
+		if(exe == NULL || realpath(exe, buf) == NULL) {
+			if(realpath("/proc/self/exe", buf) == NULL) goto end;
+		}
+		char *last = strrchr(buf, '/');
+		if(last == NULL) goto end;
+		ko_vars->env_exe = ko_build_var(name, dir, last+1);
+	} end:;
 }
 
 __attribute__((constructor)) void ko_init() {
 	o_execve = dlsym(RTLD_NEXT, "execve");
-	ko_addvar("HOME");
-	ko_addvar("TMPDIR");
+	ko_add_var("HOME");
+	ko_add_var("TMPDIR");
+
+	char **new_environ = calloc(sizeof(char*), ko_envp_size(environ)+1);
+	ko_envp_copy(new_environ, environ);
+	for(struct ko_vars *var = ko_vars; var; var = var->next)
+		if(var->env_exe)
+			ko_envp_insert(new_environ, var->env_exe);
+	environ = new_environ;
 }
 
 __attribute__((destructor)) void ko_deinit() {
 	while(ko_vars) {
-		struct ko_statics *next = ko_vars->next;
+		struct ko_vars *next = ko_vars->next;
+		free(ko_vars->env_exe);
 		free(ko_vars->env_static);
 		free(ko_vars);
 		ko_vars = next;
 	}
+	free(environ);
 }
 
 int execve(const char *file, char *const argv[], char *const envp[]) {
 	if(envp == NULL)
 		return o_execve(file, argv, envp);
 
-	int envc;
-	for(envc = 0; envp[envc] != NULL; envc++) {}
-	int newenvc = envc;
-	for(struct ko_statics *var = ko_vars; var; var = var->next)
-		newenvc++;
-
-	char *new_envp[newenvc+1];
-	for(int i = 0; i < envc; i++)
-		new_envp[i] = envp[i];
-	new_envp[envc] = NULL;
-
-	for(struct ko_statics *var = ko_vars; var; var = var->next) {
-		int i;
-		for(i = 0; new_envp[i] != NULL; i++) {
-			if(!strncmp(new_envp[i], var->env_static, strlen(var->key)+1)) {
-				new_envp[i] = var->env_static;
-				goto l;
-			}
-		} /* else */ {
-			new_envp[i] = var->env_static;
-			new_envp[i+1] = NULL;
-		} l:;
-	}
+	char *new_envp[ko_envp_size(envp)+1];
+	ko_envp_copy(new_envp, envp);
+	for(struct ko_vars *var = ko_vars; var; var = var->next)
+		if(var->env_static)
+			ko_envp_insert(new_envp, var->env_static);
 
 	return o_execve(file, argv, new_envp);
 }
