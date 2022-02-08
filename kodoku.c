@@ -1,4 +1,4 @@
-// gcc -shared -fPIC -Wall -Wextra kodoku.c -o kodoku.so
+// gcc -shared -fPIC -Wall -Wextra -ldl -Wl,--no-undefined kodoku.c -o kodoku.so
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <unistd.h>
@@ -29,10 +29,13 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 #include "musl/src/process/execvp.c"
 
 static char *home_misc = NULL;
+static __typeof(&execve) o_execve;
 
 __attribute__((constructor)) void init() {
 	char *_home_misc = getenv("KODOKU_HOME_MISC");
 	if(_home_misc != NULL) home_misc = strdup(_home_misc);
+
+	o_execve = dlsym(RTLD_NEXT, "execve");
 }
 
 __attribute__((destructor)) void deinit() {
@@ -41,7 +44,7 @@ __attribute__((destructor)) void deinit() {
 
 int execve(const char *file, char *const argv[], char *const envp[]) {
 	if(envp == NULL || home_misc == NULL)
-		return ((__typeof(&execve))dlsym(RTLD_NEXT, "execve"))(file, argv, envp);
+		return o_execve(file, argv, envp);
 
 	char home_str[5+strlen(home_misc)+1];
 	strcpy(home_str, "HOME=");
@@ -54,5 +57,5 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 		new_envp[i] = !strncmp(envp[i], "HOME=", 5) ? home_str : envp[i];
 	new_envp[envc] = NULL;
 
-	return ((__typeof(&execve))dlsym(RTLD_NEXT, "execve"))(file, argv, new_envp);
+	return o_execve(file, argv, new_envp);
 }
