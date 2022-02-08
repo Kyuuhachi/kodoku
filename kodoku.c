@@ -32,33 +32,32 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 
 static __typeof(&execve) o_execve;
 
-int set_var(char *var, char *exe, char *invar) {
+void set_var(char *var, char *exe, char *invar) {
 	char *dir = getenv(invar);
-	if(dir == NULL) return 0;
+	if(dir == NULL) return;
 
 	char val[strlen(dir)+strlen(exe)+1];
 	strcpy(val, dir);
 	strcat(val, exe);
-	return setenv(var, val, 1);
+	setenv(var, val, 1);
 }
 
-int set_vars() {
+void set_vars() {
 	char *exe = getenv(EXE_ENV);
 	unsetenv(EXE_ENV);
 	if(exe == NULL) {
 		char buf[PATH_MAX+1];
 		ssize_t r = readlink("/proc/self/exe", buf, sizeof(buf));
-		if(r < 0) return r;
-		if((size_t)r >= sizeof(buf)) return ENAMETOOLONG;
+		if(r < 0) return;
+		if((size_t)r >= sizeof(buf)) return;
 		buf[r] = 0;
 		exe = buf;
 	}
 	char *last = strrchr(exe, '/');
-	if(last == NULL) return 0; // could possibly happen on fexecve(); in that case we just keep the old home
+	if(last == NULL) return; // could possibly happen on fexecve(); in that case we just keep the old home
 
 	set_var("HOME", "KODOKU_HOME", last);
 	set_var("TMPDIR", "KODOKU_TMPDIR", last);
-	return 0;
 }
 
 __attribute__((constructor)) void init() {
