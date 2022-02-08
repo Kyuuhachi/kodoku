@@ -115,14 +115,15 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 
 	for(struct ko_statics *var = ko_vars; var; var = var->next) {
 		int i;
-		for(i = 0; envp[i] != NULL; i++)
+		for(i = 0; new_envp[i] != NULL; i++) {
 			if(!strncmp(new_envp[i], var->env_static, strlen(var->key)+1)) {
 				new_envp[i] = var->env_static;
 				goto l;
 			}
-		new_envp[i] = var->env_static;
-		new_envp[i+1] = NULL;
-		l:;
+		} /* else */ {
+			new_envp[i] = var->env_static;
+			new_envp[i+1] = NULL;
+		} l:;
 	}
 
 	return o_execve(file, argv, new_envp);
