@@ -68,7 +68,7 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 
 	char home_str[5+strlen(home_misc)+1];
 	strcpy(home_str, "HOME=");
-	strcpy(home_str+5, home_misc);
+	strcat(home_str, home_misc);
 
 	int envc;
 	for(envc = 0; envp[envc] != NULL; envc++) {}
