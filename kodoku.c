@@ -60,7 +60,7 @@ size_t ko_envp_size(char *const *envp, struct ko_llist *list) {
 	int envc;
 	for(envc = 0; envp[envc] != NULL; envc++) {}
 	for(; list; envc++, list = list->next) {}
-	return envc;
+	return envc + 1;
 }
 
 void ko_envp_insert(char **envp, char *line) {
@@ -125,7 +125,7 @@ __attribute__((constructor)) void ko_init() {
 	ko_add_var("HOME");
 	ko_add_var("TMPDIR");
 
-	char **new_environ = calloc(sizeof(char*), ko_envp_size(environ, ko_env_exe) + 1);
+	char **new_environ = calloc(sizeof(char*), ko_envp_size(environ, ko_env_exe));
 	ko_envp_fill(new_environ, environ, ko_env_exe);
 	environ = new_environ;
 }
@@ -140,7 +140,7 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 	if(envp == NULL)
 		return o_execve(file, argv, envp);
 
-	char *new_envp[ko_envp_size(envp, ko_env_static)+1];
+	char *new_envp[ko_envp_size(envp, ko_env_static)];
 	ko_envp_fill(new_envp, envp, ko_env_static);
 	return o_execve(file, argv, new_envp);
 }
