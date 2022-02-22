@@ -67,3 +67,12 @@ To enable this, you need to set the `DCONF_PROFILE` variable to point to a file 
 I don't know why you can't just put the description in the envvar directly, but that's to be expected from those GNOME folks.
 I recommend putting the file under `dconf-service`, since that's where the database will be stored anyway.
 With PAM, this can be specified as `DCONF_PROFILE DEFAULT=${KODOKU_HOME}/dconf-service/profile`.
+
+### Zsh
+Likely you do not want `~` to expand to `$KODOKU_HOME/zsh`.
+This can be adjusted by simply assigning to `HOME`.
+I don't know if it has any effect, but assigning `ZDOTDIR=$KODOKU_HOME/zsh` probably won't hurt.
+However be careful that any plugins you have likely use `~` instead of `$ZDOTDIR`, so those are likely going to clutter.
+Perhaps a pull request is in order.
+
+Also attached is a `kodoku.zsh`. Sourcing it installs kodoku support into the *dynamic named directories* system, which allows `~[x]` to expand to `$KODOKU_HOME/x`.
