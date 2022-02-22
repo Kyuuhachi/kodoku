@@ -1,4 +1,3 @@
-// gcc -shared -fPIC -Wall -Wextra -ldl -Wl,--no-undefined -fvisibility=hidden kodoku.c -o kodoku.so
 #define _GNU_SOURCE
 #include <stdio.h>
 #include <unistd.h>
@@ -16,10 +15,8 @@ DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 // Let's skip fexecve, it's rare
 #undef DLLEXPORT
 
-// Much easier to piggyback off musl than implementing these manually
+// Much easier to piggyback off musl than implementing the exec variants manually
 #define __strchrnul strchrnul
-#define weak __attribute__((__weak__))
-#define hidden __attribute__((__visibility__("hidden")))
 #define weak_alias(old, new) \
 	extern __typeof(old) new __attribute__((__weak__, __alias__(#old)))
 
@@ -38,7 +35,7 @@ struct ko_llist {
 };
 
 static struct ko_llist *ko_env_exe = NULL;
-static struct ko_llist *ko_env_static = NULL;
+static struct ko_llist *ko_env_misc = NULL;
 
 struct ko_llist *ko_llist_cons(struct ko_llist *list, char *val) {
 	struct ko_llist *head = malloc(sizeof (struct ko_llist));
@@ -102,9 +99,9 @@ void ko_add_var(char *name) {
 
 	{
 		char *suf = getenv("KODOKU_STATIC");
-		if(suf == NULL) suf = "static";
+		if(suf == NULL) suf = "misc";
 		char *str = ko_build_var(name, dir, suf);
-		ko_env_static = ko_llist_cons(ko_env_static, str);
+		ko_env_misc = ko_llist_cons(ko_env_misc, str);
 	}
 
 	{
@@ -132,7 +129,7 @@ __attribute__((constructor)) void ko_init() {
 
 __attribute__((destructor)) void ko_deinit() {
 	ko_llist_free(ko_env_exe);
-	ko_llist_free(ko_env_static);
+	ko_llist_free(ko_env_misc);
 	free(environ);
 }
 
@@ -140,7 +137,7 @@ int execve(const char *file, char *const argv[], char *const envp[]) {
 	if(envp == NULL)
 		return o_execve(file, argv, envp);
 
-	char *new_envp[ko_envp_size(envp, ko_env_static)];
-	ko_envp_fill(new_envp, envp, ko_env_static);
+	char *new_envp[ko_envp_size(envp, ko_env_misc)];
+	ko_envp_fill(new_envp, envp, ko_env_misc);
 	return o_execve(file, argv, new_envp);
 }
