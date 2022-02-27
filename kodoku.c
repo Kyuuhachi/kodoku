@@ -1,5 +1,8 @@
 #define _GNU_SOURCE
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <limits.h>
 #include <unistd.h>
 #include <dlfcn.h>
 #include <sys/auxv.h>
@@ -15,20 +18,6 @@ DLLEXPORT int execvpe(const char *file, char *const argv[], char *const envp[]);
 DLLEXPORT int execve(const char *file, char *const argv[], char *const envp[]);
 // Let's skip fexecve, it's rare
 #undef DLLEXPORT
-
-// Much easier to piggyback off musl than implementing the exec variants manually
-#define __strchrnul strchrnul
-#define weak_alias(old, new) \
-	extern __typeof(old) new __attribute__((__weak__, __alias__(#old)))
-
-#include "musl/src/process/execl.c"
-#include "musl/src/process/execle.c"
-#include "musl/src/process/execlp.c"
-#include "musl/src/process/execv.c"
-#include "musl/src/process/execvp.c"
-
-
-static __typeof(&execve) o_execve;
 
 static char *ko_home_self = NULL;
 static char *ko_home_misc = NULL;
