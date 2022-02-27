@@ -53,8 +53,6 @@ char *ko_build_home(char *dir, char *suf) {
 }
 
 __attribute__((constructor)) void ko_init() {
-	o_execve = dlsym(RTLD_NEXT, "execve");
-
 	char *dir = getenv("KODOKU_HOME");
 	if(dir) {
 		char *suf = getenv("KODOKU_MISC");
@@ -79,6 +77,9 @@ __attribute__((destructor)) void ko_deinit() {
 }
 
 int execve(const char *file, char *const argv[], char *const envp[]) {
+	static __typeof(execve) *o_execve;
+	if(!o_execve) o_execve = dlsym(RTLD_NEXT, "execve");
+
 	if(envp == NULL)
 		return o_execve(file, argv, envp);
 
