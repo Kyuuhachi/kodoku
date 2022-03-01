@@ -12,11 +12,6 @@
 #define BUF_MAX_LENGTH 256
 #define BUF_COUNT 32
 
-bool strequal(const char *l, const char *r) {
-	if((l == NULL) != (r == NULL)) return false;
-	return !strcmp(l, r);
-}
-
 char BUF[BUF_COUNT][BUF_MAX_LENGTH];
 size_t buf_idx = 0;
 char *make_home(char *prefix, char *suffix) {
@@ -26,6 +21,19 @@ char *make_home(char *prefix, char *suffix) {
 	strcat(BUF[bufi], "/");
 	strcat(BUF[bufi], suffix);
 	return BUF[bufi];
+}
+
+bool isfname(Dl_info *dl, const char *name) {
+	char *start = strstr(dl->dli_fname, name);
+	if(!start) return false;
+	size_t len = strlen(name);
+	if(start[len] != 0 && start[len] != '.') return false;
+	return start == dl->dli_fname || start[-1] == '/';
+}
+
+bool issname(Dl_info *dl, const char *name) {
+	if(dl->dli_sname == NULL) return false;
+	return strcmp(dl->dli_sname, name) == 0;
 }
 
 DLLEXPORT char *getenv(const char *name) {
@@ -55,10 +63,9 @@ DLLEXPORT char *getenv(const char *name) {
 		for(int i = 1; i < naddr; i++) {
 			Dl_info info;
 			dladdr(stack[i], &info);
-			if(strequal(info.dli_fname, "/usr/lib/libglib-2.0.so.0")
-					&& strequal(info.dli_sname, "g_get_user_config_dir"))
+			if(isfname(&info, "libglib-2.0.so") && issname(&info, "g_get_user_config_dir"))
 				return make_home(kodoku_home, "gtk");
-			if(i == 1 && strequal(info.dli_fname, "/usr/lib/libfontconfig.so.1"))
+			if(i == 1 && isfname(&info, "libfontconfig.so"))
 				return make_home(kodoku_home, "fontconfig");
 		}
 	}
