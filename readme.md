@@ -43,6 +43,9 @@ or libraries that have their own configuration.
 These issues can usually be solved either via gratuitous use of symlinks,
 or if supported, via environment variables.
 
+There is also a WIP module that tries to direct certain libraries and direct them to the appropriate locations.
+Currently supported are Fontconfig and GTK, though the heuristic for the latter is a bit looser than I'd like.
+
 Another class of issues include programs that expect `~` to point to a directory useful for users.
 This includes graphical file choosers such as those included in GTK and Qt,
 as well as many CLI tools such as `zsh` and `vim`.
